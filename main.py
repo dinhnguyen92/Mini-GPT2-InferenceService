@@ -1,6 +1,7 @@
 import uvicorn
 import io
 from fastapi import FastAPI
+from typing import List
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
@@ -45,10 +46,10 @@ class Prompt(BaseModel):
 
 # Pydantic model for generated text
 class GeneratedCompletion(BaseModel):
-	text: str
+    tokens: List[str]
 
 def temperature_sampling(logits, temperature=1.0):
-    # Scale input logits by temperature
+    # Scale logits by temperature
     scaled_logits = logits / temperature
 
     # Apply softmax to get token probability distribution
@@ -61,20 +62,28 @@ def temperature_sampling(logits, temperature=1.0):
 async def generate(prompt: Prompt):
     tokenized_prompt = text_generator.tokenizer(prompt.text, return_tensors='pt')
 
-    # Remove the last token (SEP) from the input prompt
-    input_ids = tokenized_prompt['input_ids'][:, :-1]
+    input_ids = tokenized_prompt['input_ids']
+    # Remove the last token from the input prompt if it is (SEP)
+    if input_ids[:, -1].item() == text_generator.tokenizer.sep_token_id:
+        input_ids = input_ids[:, :-1]
 
     for _ in range(prompt.max_resp_len):
+        # Use the pre-trained model to generate the logits of the tokens
         output_logits = text_generator.model(input_ids)
+
         # We only use the last logit since we only want to predict the last/next token
         prediction_id = temperature_sampling(output_logits[:, -1, :], temperature=prompt.sampling_temp)
         input_ids = torch.hstack((input_ids, prediction_id.view(1, 1)))
 
+        # Terminate the sequence if the token is (SEP)
         if prediction_id == text_generator.tokenizer.sep_token_id:
             break
+    
+    tokens = []
+    for input_id in input_ids[0, :]:
+         tokens.append(text_generator.tokenizer.decode(input_id))
 
-    generated = text_generator.tokenizer.decode(input_ids[0, 1:])
-    return {'text': generated}
+    return { 'tokens': tokens }
 
 ## Start the Server
 if __name__ == "__main__":
