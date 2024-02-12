@@ -45,7 +45,7 @@ class Prompt(BaseModel):
 	sampling_temp: float
 
 # Pydantic model for generated text
-class GeneratedCompletion(BaseModel):
+class TextCompletion(BaseModel):
     tokens: List[str]
 
 def temperature_sampling(logits, temperature=1.0):
@@ -58,7 +58,8 @@ def temperature_sampling(logits, temperature=1.0):
     # Sample token based on the probability distribution
     return torch.multinomial(prob_dist, 1)
 
-@app.post('/generate', response_model=GeneratedCompletion)
+# Endpoint to generate text completion
+@app.post('/generate', response_model=TextCompletion)
 async def generate(prompt: Prompt):
     tokenized_prompt = text_generator.tokenizer(prompt.text, return_tensors='pt')
 
@@ -87,5 +88,4 @@ async def generate(prompt: Prompt):
 
 ## Start the Server
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
