@@ -33,19 +33,19 @@ async def lifespan(application: FastAPI):
 		tokenizer = GPT2Tokenizer.from_pretrained(tokenizer_checkpoint)
 
 		# Add pad token to the tokenizer
-		tokenizer.add_special_tokens({"pad_token": "<PAD>"})
+		tokenizer.add_special_tokens({'pad_token': '<PAD>'})
 
 app = FastAPI(lifespan=lifespan)
 
 # Pydantic model for prompt request
 class Prompt(BaseModel):
-  text: str
-  max_resp_len: int
-  sampling_temp: float
+	text: str
+	max_resp_len: int
+	sampling_temp: float
 
 # Pydantic model for generated text
 class GeneratedCompletion(BaseModel):
-  text: str
+	text: str
 
 def temperature_sampling(logits, temperature=1.0):
     # Scale input logits by temperature
