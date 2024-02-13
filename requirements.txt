@@ -4,3 +4,4 @@ gunicorn
 transformers
 torch
 python-dotenv
+azure-storage-blob

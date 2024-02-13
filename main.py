@@ -1,41 +1,31 @@
 import uvicorn
-import io
 from fastapi import FastAPI
 from typing import List
 from pydantic import BaseModel
-from dotenv import dotenv_values
 
-import pickle
 import torch
 import torch.nn.functional as F
 from transformers import GPT2Tokenizer
 
+from model_store import download_model, get_available_model_versions
+
+# We need to import the model classes so that they can be unpickled from files
 from models import CausalSelfAttention, TransformerBlock, PositionalEncoding, Decoder
 
-# Load environment variables
-env_vars = dotenv_values(".env")
-
-# Since the pickled model was trained with GPU but will now be loaded into CPU
-# we need to create a custom unpickler to load it into CPU. More details below:
-# https://github.com/pytorch/pytorch/issues/16797
-class UnpicklerForCPU(pickle.Unpickler):
-     def find_class(self, module, name):
-        if module == 'torch.storage' and name == '_load_from_bytes':
-            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
-        else: return super().find_class(module, name)
+model_versions = get_available_model_versions()
+print(model_versions)
 
 class TextGenerator:
-    def __init__(self, model_path):
-        with open(model_path, mode='rb') as file:
-            self.model = UnpicklerForCPU(file).load()
-						
+    def __init__(self):
+        self.models = {version: download_model(version) for version in model_versions}
+
         tokenizer_checkpoint = 'gpt2'
         self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer_checkpoint)
 
 		# Add pad token to the tokenizer
         self.tokenizer.add_special_tokens({'pad_token': '<PAD>'})
           
-text_generator = TextGenerator(env_vars['MODEL_PATH'])
+text_generator = TextGenerator()
 app = FastAPI()
 
 # Pydantic model for prompt request
@@ -59,8 +49,8 @@ def temperature_sampling(logits, temperature=1.0):
     return torch.multinomial(prob_dist, 1)
 
 # Endpoint to generate text completion
-@app.post('/generate', response_model=TextCompletion)
-async def generate(prompt: Prompt):
+@app.post('/{model_version}/generate', response_model=TextCompletion)
+async def generate(model_version: str, prompt: Prompt):
     tokenized_prompt = text_generator.tokenizer(prompt.text, return_tensors='pt')
 
     input_ids = tokenized_prompt['input_ids']
@@ -70,7 +60,7 @@ async def generate(prompt: Prompt):
 
     for _ in range(prompt.max_resp_len):
         # Use the pre-trained model to generate the logits of the tokens
-        output_logits = text_generator.model(input_ids)
+        output_logits = text_generator.models[model_version](input_ids)
 
         # We only use the last logit since we only want to predict the last/next token
         prediction_id = temperature_sampling(output_logits[:, -1, :], temperature=prompt.sampling_temp)
