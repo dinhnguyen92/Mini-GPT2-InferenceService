@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copy the rest of the application code into the container
 COPY . .
 
-# Expose container's port
+# Expose the app to gunicorn through port 3100 of the container
 EXPOSE 3100
 
 # Start the server to run the application
