@@ -13,7 +13,6 @@ from model_store import download_model, get_available_model_versions
 from models import CausalSelfAttention, TransformerBlock, PositionalEncoding, Decoder
 
 model_versions = get_available_model_versions()
-print(model_versions)
 
 class TextGenerator:
     def __init__(self):
@@ -74,7 +73,7 @@ async def generate(model_version: str, prompt: Prompt):
     for input_id in input_ids[0, :]:
          tokens.append(text_generator.tokenizer.decode(input_id))
 
-    return { 'tokens': tokens }
+    return {'tokens': tokens}
 
 ## Start the Server
 if __name__ == "__main__":
