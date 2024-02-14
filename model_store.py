@@ -1,27 +1,40 @@
-import io
-import pickle
+import json
 import torch
-from azure_blob_service import download_blob, list_container_blobs
+import numpy as np
+
+from models import Decoder, ModelConfig, ModelInfo
+from azure_blob_service import download_file, list_container_blobs
 
 models_container_name = 'ml-models'
-model_file_prefix = 'mini_gpt2_'
-modelf_file_suffix = '.pkl'
+model_file_prefix = 'mini-gpt2-'
+state_dict_file_extension = 'pth'
 
-# Since the pickled model was trained with GPU but will now be loaded into CPU
-# we need to create a custom unpickler to load it into CPU. More details below:
-# https://github.com/pytorch/pytorch/issues/16797
-class UnpicklerForCPU(pickle.Unpickler):
-     def find_class(self, module, name):
-        if module == 'torch.storage' and name == '_load_from_bytes':
-            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
-        else: return super().find_class(module, name)
+config_container_name = 'ml-model-configs'
+config_file_prefix = 'config-'
+json_file_extension = 'json'
 
-def download_model(model_version):
-    file_name = f'{model_file_prefix}{model_version}{modelf_file_suffix}'
-    model_bytes = download_blob(models_container_name, file_name)
-    with io.BytesIO(model_bytes) as model_file:
-        return UnpicklerForCPU(model_file).load()
-    
+train_losses_container_name = 'ml-training-losses'
+train_losses_file_prefix = 'train-losses-'
+
+def download_model_config(model_version):
+    file_name = f'{config_file_prefix}{model_version}.{json_file_extension}'
+    with download_file(config_container_name, file_name) as buffer:
+        return ModelConfig(**json.load(buffer))
+
+def download_model(vocab_size, model_info: ModelInfo):
+    file_name = f'{model_file_prefix}{model_info.version}.{state_dict_file_extension}'
+
+    with download_file(models_container_name, file_name) as buffer:
+        state_dict = torch.load(buffer, map_location=torch.device('cpu'))
+        model = Decoder(vocab_size, model_info.config)
+        model.load_state_dict(state_dict)
+        return model
+
+def download_train_losses(model_version):
+    file_name = f'{train_losses_file_prefix}{model_version}.{json_file_extension}'
+    with download_file(train_losses_container_name, file_name) as buffer:
+        return torch.tensor(np.array(json.load(buffer)))
+
 def get_available_model_versions():
     file_names = [blob.name for blob in list_container_blobs(models_container_name)]
-    return [name.removeprefix(model_file_prefix).removesuffix(modelf_file_suffix) for name in file_names]
+    return [name.removeprefix(model_file_prefix).removesuffix(f'.{state_dict_file_extension}') for name in file_names]
