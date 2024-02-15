@@ -1,6 +1,7 @@
 FROM python:3.11
 
 # Set the working directory in the container
+RUN mkdir /app
 WORKDIR /app
 
 # Install any needed packages specified in requirements.txt
@@ -11,7 +12,7 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY . .
 
 # Expose the app to gunicorn through port 3100 of the container
-EXPOSE 3100
+EXPOSE 8000
 
 # Start the server to run the application
 CMD ["gunicorn", "main:app"]

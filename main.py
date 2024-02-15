@@ -93,8 +93,8 @@ async def generate(model_version: str, prompt: Prompt):
         return {'tokens': tokens}
     
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {ex}")
+        raise HTTPException(status_code=500, detail=f'Unexpected error: {ex}')
 
 ## Start the Server
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    uvicorn.run('main:app', host='0.0.0.0', port=8000)
