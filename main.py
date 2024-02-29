@@ -1,6 +1,8 @@
 import uvicorn
 import logging
 import traceback
+from dotenv import dotenv_values
+
 from typing import List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
@@ -17,13 +19,18 @@ from model_store import download_model_config, download_model, download_losses, 
 
 from token_sampler import TokenSampler
 
+
+# Load environment variables
+env_vars = dotenv_values('.env')
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load NLTK words
 nltk.download('words')
 
-model_versions = get_available_model_versions(limit=1)
+model_limit = int(env_vars['MODEL_LIMIT'])
+model_versions = get_available_model_versions(limit=model_limit)
 logger.info(f'All model versions: {model_versions}')
 
 def count_model_params(model):
