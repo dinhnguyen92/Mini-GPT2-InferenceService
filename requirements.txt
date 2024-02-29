@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 gunicorn
+nltk
 transformers
 torch
 python-dotenv

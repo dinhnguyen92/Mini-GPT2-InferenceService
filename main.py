@@ -1,4 +1,6 @@
 import uvicorn
+import logging
+import traceback
 from typing import List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
@@ -7,28 +9,25 @@ import torch
 import torch.nn.functional as F
 from transformers import GPT2Tokenizer
 
+import nltk
+from nltk.corpus import words
+
 from models import ModelInfo
-from model_store import download_model_config, download_model, download_train_losses, get_available_model_versions
+from model_store import download_model_config, download_model, download_losses, get_available_model_versions
 
-model_versions = get_available_model_versions()
+from token_sampler import TokenSampler
 
-class TextGenerator:
-    def __init__(self):
-        self.tokenizer_checkpoint = 'gpt2'
-        self.tokenizer = GPT2Tokenizer.from_pretrained(self.tokenizer_checkpoint)
-        self.tokenizer.add_special_tokens({'pad_token': '<PAD>'})
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-        self.model_infos = {version: ModelInfo(
-            version=version,
-            config=download_model_config(version),
-            train_losses=download_train_losses(version)
-        ) for version in model_versions}
+# Load NLTK words
+nltk.download('words')
 
-        vocab_size = self.tokenizer.vocab_size + 1
-        self.models = {version: download_model(vocab_size, self.model_infos[version]) for version in model_versions}
+model_versions = get_available_model_versions(limit=1)
+logger.info(f'All model versions: {model_versions}')
 
-text_generator = TextGenerator()
-app = FastAPI()
+def count_model_params(model):
+    return sum(p.numel() for p in model.parameters())
 
 # Pydantic model for prompt request
 class Prompt(BaseModel):
@@ -40,60 +39,92 @@ class Prompt(BaseModel):
 class TextCompletion(BaseModel):
     tokens: List[str]
 
-def temperature_sampling(logits, temperature=1.0):
-    # Scale logits by temperature
-    scaled_logits = logits / temperature
+class TextGenerator:
+    def __init__(self):
+        self.tokenizer_checkpoint = 'gpt2'
+        self.tokenizer = GPT2Tokenizer.from_pretrained(self.tokenizer_checkpoint)
+        self.tokenizer.add_special_tokens({'pad_token': '<PAD>'})
 
-    # Apply softmax to get token probability distribution
-    prob_dist = F.softmax(scaled_logits, dim=-1)
+        self.token_sampler = TokenSampler(words.words(), self.tokenizer)
 
-    # Sample token based on the probability distribution
-    return torch.multinomial(prob_dist, 1)
+        logger.info('Downloading model configs')
+        self.model_configs = {version: download_model_config(version) for version in model_versions}
+
+        logger.info('Downloading models')
+        vocab_size = self.tokenizer.vocab_size + 1
+        self.models = {version: download_model(
+            vocab_size,
+            version,
+            self.model_configs[version]
+        ) for version in model_versions}
+
+        logger.info('Downloading model infos')
+        self.model_infos = {version: ModelInfo(
+            version=version,
+            config=self.model_configs[version],
+            test_losses=download_losses(version, is_train_losses=False),
+            train_losses=download_losses(version),
+            num_params=count_model_params(self.models[version])
+        ) for version in model_versions}
+
+        logger.info('Finished initializing TextGenerator')
+
+    def generate_text(self, model_version: str, prompt: Prompt):
+        tokenized_prompt = self.tokenizer(prompt.text, return_tensors='pt')
+        input_ids = tokenized_prompt['input_ids']
+        # Remove the last token from the input prompt if it is (SEP)
+        if input_ids[:, -1].item() == self.tokenizer.sep_token_id:
+            input_ids = input_ids[:, :-1]
+
+        for _ in range(prompt.max_resp_len):
+            output_logits = self.models[model_version](input_ids)
+            prediction_id = self.token_sampler.sample_token_id(input_ids[:, :-2], input_ids[:, :-1], output_logits, temperature=prompt.sampling_temp)
+
+            # Insert the prediction ID back into the input sequence so that
+            # it will become part of the inputs to predict the next token
+            input_ids = torch.hstack((input_ids, prediction_id.view(1, 1)))
+            
+            # Terminate the sequence if the token is (SEP)
+            if prediction_id == self.tokenizer.sep_token_id:
+                break
+        
+        generated_tokens = [self.tokenizer.decode(input_id) for input_id in input_ids[0, :]]
+        return TextCompletion(tokens=generated_tokens)
+
+text_generator = TextGenerator()
+app = FastAPI()
 
 def assert_valid_version(model_version):
     if model_version not in text_generator.models:
         raise HTTPException(status_code=404, detail=f"Model version '{model_version}' not found")
     
 # Endpoint to get available model versions
-@app.get('/model_versions', response_model=List[str])
+@app.get('/model-versions', response_model=List[str])
 async def list_versions():
-    return model_versions
+    try:
+        return model_versions
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f'Error getting model versions: {ex}')
 
 # Endpoint to get model's info
 @app.get('/models/{model_version}/info', response_model=ModelInfo)
 async def get_config(model_version: str):
     assert_valid_version(model_version)
-    return text_generator.model_infos[model_version]
+    try:
+        return text_generator.model_infos[model_version]
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f'Error getting model info: {ex}')
+    
 
 # Endpoint to generate text completion
 @app.post('/models/{model_version}/generate', response_model=TextCompletion)
 async def generate(model_version: str, prompt: Prompt):
     assert_valid_version(model_version)
-
     try:
-        tokenized_prompt = text_generator.tokenizer(prompt.text, return_tensors='pt')
-        input_ids = tokenized_prompt['input_ids']
-        # Remove the last token from the input prompt if it is (SEP)
-        if input_ids[:, -1].item() == text_generator.tokenizer.sep_token_id:
-            input_ids = input_ids[:, :-1]
-
-        for _ in range(prompt.max_resp_len):
-            # Use the pre-trained model to generate the logits of the tokens
-            output_logits = text_generator.models[model_version](input_ids)
-
-            # We only use the last logit since we only want to predict the last/next token
-            prediction_id = temperature_sampling(output_logits[:, -1, :], temperature=prompt.sampling_temp)
-            input_ids = torch.hstack((input_ids, prediction_id.view(1, 1)))
-
-            # Terminate the sequence if the token is (SEP)
-            if prediction_id == text_generator.tokenizer.sep_token_id:
-                break
-        
-        tokens = [text_generator.tokenizer.decode(input_id) for input_id in input_ids[0, :]]
-        return {'tokens': tokens}
-    
+        return text_generator.generate_text(model_version, prompt)
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f'Unexpected error: {ex}')
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f'Error generating text: {ex}')
 
 ## Start the Server
 if __name__ == '__main__':

@@ -15,11 +15,17 @@ class ModelConfig(BaseModel):
     n_layers: int
     epochs: int
     dropout_rate: float
+    lr: float
+    lr_min: float
+    T_0: int
+    T_mult: int
 
 class ModelInfo(BaseModel):
     version: str
     config: ModelConfig
+    test_losses: List[float]
     train_losses: List[float]
+    num_params: int
 
 class CausalSelfAttention(nn.Module):
     def __init__(self, config: ModelConfig):
