@@ -5,7 +5,10 @@ from dotenv import dotenv_values
 
 from typing import List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
+
+from fastapi import FastAPI, HTTPException, Depends
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
+from auth import validate_api_key
 
 import torch
 import torch.nn.functional as F
@@ -99,11 +102,11 @@ class TextGenerator:
         return TextCompletion(tokens=generated_tokens)
 
 text_generator = TextGenerator()
-app = FastAPI()
+app = FastAPI(dependencies=[Depends(validate_api_key)])
 
 def assert_valid_version(model_version):
     if model_version not in text_generator.models:
-        raise HTTPException(status_code=404, detail=f"Model version '{model_version}' not found")
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"Model version '{model_version}' not found")
     
 # Endpoint to get available model versions
 @app.get('/model-versions', response_model=List[str])
@@ -111,7 +114,7 @@ async def list_versions():
     try:
         return model_versions
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f'Error getting model versions: {ex}')
+        raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error getting model versions: {ex}')
 
 # Endpoint to get model's info
 @app.get('/models/{model_version}/info', response_model=ModelInfo)
@@ -120,18 +123,23 @@ async def get_config(model_version: str):
     try:
         return text_generator.model_infos[model_version]
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f'Error getting model info: {ex}')
+        raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error getting model info: {ex}')
     
 
 # Endpoint to generate text completion
 @app.post('/models/{model_version}/generate', response_model=TextCompletion)
 async def generate(model_version: str, prompt: Prompt):
     assert_valid_version(model_version)
+
+    MIN_PROMPT_LENGTH = 3
+    if len(prompt.text.split()) < MIN_PROMPT_LENGTH:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f'Prompt must have at least {MIN_PROMPT_LENGTH} words')
+
     try:
         return text_generator.generate_text(model_version, prompt)
     except Exception as ex:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f'Error generating text: {ex}')
+        raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error generating text: {ex}')
 
 ## Start the Server
 if __name__ == '__main__':
