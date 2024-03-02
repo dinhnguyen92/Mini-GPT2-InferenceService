@@ -5,7 +5,7 @@ def generate_loss_plot(train_losses, test_losses):
     plt.style.use('dark_background')
 
     # Plot train and test losses
-    plt.plot(train_losses, label='Train Loss', color='#0c5a94')
+    plt.plot(train_losses, label='Train Loss', color='#3932fc')
     plt.plot(test_losses, label='Test Loss', color='#6dffff')
 
     # Add labels and title
