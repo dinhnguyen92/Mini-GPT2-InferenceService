@@ -6,3 +6,4 @@ transformers
 torch
 python-dotenv
 azure-storage-blob
+matplotlib

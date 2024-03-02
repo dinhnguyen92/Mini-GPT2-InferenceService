@@ -6,7 +6,7 @@ from dotenv import dotenv_values
 from typing import List
 from pydantic import BaseModel
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Response, HTTPException, Depends
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
 from auth import validate_api_key
 
@@ -21,6 +21,7 @@ from models import ModelInfo
 from model_store import download_model_config, download_model, download_losses, get_available_model_versions
 
 from token_sampler import TokenSampler
+from loss_plot import generate_loss_plot
 
 
 # Load environment variables
@@ -118,13 +119,24 @@ async def list_versions():
 
 # Endpoint to get model's info
 @app.get('/models/{model_version}/info', response_model=ModelInfo)
-async def get_config(model_version: str):
+async def get_model_info(model_version: str):
     assert_valid_version(model_version)
     try:
         return text_generator.model_infos[model_version]
     except Exception as ex:
         raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error getting model info: {ex}')
     
+# Endpoint to get model's loss plot
+@app.get('/models/{model_version}/plot')
+async def get_model_plot(model_version: str):
+    assert_valid_version(model_version)
+    try:
+        train_losses = text_generator.model_infos[model_version].train_losses
+        test_losses = text_generator.model_infos[model_version].test_losses
+        plot_bytes = generate_loss_plot(train_losses, test_losses)
+        return Response(content=plot_bytes, media_type="image/png")
+    except Exception as ex:
+        raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail=f'Error getting model plot: {ex}')
 
 # Endpoint to generate text completion
 @app.post('/models/{model_version}/generate', response_model=TextCompletion)
