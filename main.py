@@ -18,6 +18,7 @@ from models import ModelInfo
 from model_store import download_model_config, download_model, download_losses, get_available_model_versions
 
 from token_sampler import TokenSampler
+from token_filter import is_valid_token
 from loss_plot import generate_loss_plot
 
 
@@ -42,7 +43,9 @@ class Prompt(BaseModel):
 
 # Pydantic model for generated text
 class TextCompletion(BaseModel):
-    tokens: List[str]
+    prompt_tokens: List[str]
+    result_tokens: List[str]
+    alt_token_groups: List[List[str]]
 
 class TextGenerator:
     def __init__(self):
@@ -74,12 +77,34 @@ class TextGenerator:
 
         logger.info('Finished initializing TextGenerator')
 
+    def decode_tokens(self, token_ids):
+        return [self.tokenizer.decode(token_id) for token_id in token_ids]
+    
+    def get_top_k_alt_tokens(self, output_logits, k=5):
+        # Using each token's distribution, we'll find the top k most probable tokens
+        # that could serve as the original token's alternative
+        _, top_token_ids = torch.topk(output_logits, k=k, dim=2)
+        
+        # Reduce the token tensor from 3D to 2D
+        alt_token_id_groups = top_token_ids.view(-1, top_token_ids.size(-1))
+        
+        # Convert the token IDs into valid tokens
+        alt_token_groups = []
+        for alt_token_id_group in alt_token_id_groups:
+            alt_tokens = self.decode_tokens(alt_token_id_group)
+            valid_alt_tokens = [token for token in alt_tokens if is_valid_token(token)]
+            alt_token_groups.append(valid_alt_tokens)
+            
+        return alt_token_groups
+
     def generate_text(self, model_version: str, prompt: Prompt):
         tokenized_prompt = self.tokenizer(prompt.text, return_tensors='pt')
         input_ids = tokenized_prompt['input_ids']
         # Remove the last token from the input prompt if it is (SEP)
         if input_ids[:, -1].item() == self.tokenizer.sep_token_id:
             input_ids = input_ids[:, :-1]
+
+        original_prompt_tokens = self.decode_tokens(input_ids[0, :])
 
         for _ in range(prompt.max_resp_len):
             output_logits = self.models[model_version](input_ids)
@@ -93,8 +118,16 @@ class TextGenerator:
             if prediction_id == self.tokenizer.sep_token_id:
                 break
         
-        generated_tokens = [self.tokenizer.decode(input_id) for input_id in input_ids[0, :]]
-        return TextCompletion(tokens=generated_tokens)
+        # The final output_logits tensor contains the probability distribution of all generated tokens
+        # Hence we can use it to find alternative tokens for all final generated tokens
+        alt_token_groups = self.get_top_k_alt_tokens(output_logits, k=5)
+        result_tokens = self.decode_tokens(input_ids[0, :])
+
+        return TextCompletion(
+            prompt_tokens=original_prompt_tokens,
+            result_tokens=result_tokens,
+            alt_token_groups=alt_token_groups
+        )
 
 text_generator = TextGenerator()
 app = FastAPI(dependencies=[Depends(validate_api_key)])
