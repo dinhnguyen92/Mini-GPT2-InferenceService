@@ -14,9 +14,6 @@ import torch
 import torch.nn.functional as F
 from transformers import GPT2Tokenizer
 
-import nltk
-from nltk.corpus import words
-
 from models import ModelInfo
 from model_store import download_model_config, download_model, download_losses, get_available_model_versions
 
@@ -29,9 +26,6 @@ env_vars = dotenv_values('.env')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Load NLTK words
-nltk.download('words')
 
 model_limit = int(env_vars['MODEL_LIMIT'])
 model_versions = get_available_model_versions(limit=model_limit)
@@ -56,7 +50,7 @@ class TextGenerator:
         self.tokenizer = GPT2Tokenizer.from_pretrained(self.tokenizer_checkpoint)
         self.tokenizer.add_special_tokens({'pad_token': '<PAD>'})
 
-        self.token_sampler = TokenSampler(words.words(), self.tokenizer)
+        self.token_sampler = TokenSampler(self.tokenizer, logger)
 
         logger.info('Downloading model configs')
         self.model_configs = {version: download_model_config(version) for version in model_versions}
@@ -89,7 +83,7 @@ class TextGenerator:
 
         for _ in range(prompt.max_resp_len):
             output_logits = self.models[model_version](input_ids)
-            prediction_id = self.token_sampler.sample_token_id(input_ids[:, :-2], input_ids[:, :-1], output_logits, temperature=prompt.sampling_temp)
+            prediction_id = self.token_sampler.sample_token_id(output_logits, temperature=prompt.sampling_temp)
 
             # Insert the prediction ID back into the input sequence so that
             # it will become part of the inputs to predict the next token
