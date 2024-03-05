@@ -8,15 +8,20 @@ class TokenSampler:
         self.tokenizer = tokenizer
         self.logger = logger
 
-    def temperature_sampling(self, logits, temperature):
+    def get_temperature_scaled_prob_dist(self, logits, temperature):
         # Scale logits by temperature
         scaled_logits = logits / temperature
 
         # Apply softmax to get token probability distribution
-        prob_dist = F.softmax(scaled_logits, dim=-1)
+        return F.softmax(scaled_logits, dim=-1)
+
+    def temperature_sampling(self, logits, temperature):
+        prob_dist = self.get_temperature_scaled_prob_dist(logits, temperature)
 
         # Sample token based on the probability distribution
-        return torch.multinomial(prob_dist, 1)
+        token_id = torch.multinomial(prob_dist, 1)
+        token_prob = prob_dist[0, token_id].item()
+        return (token_id, token_prob)
     
     def sample_token_id(self, logits,  temperature=1.0):
         retry_count = 0
@@ -26,7 +31,7 @@ class TokenSampler:
         # Keep sampling until we get a valid token
         while retry_count < max_retry and not is_valid:
             # We only use the last logit since we only want to predict the last/next token
-            token_id = self.temperature_sampling(logits[:, -1, :], temperature)
+            token_id, token_prob = self.temperature_sampling(logits[:, -1, :], temperature)
             token = self.tokenizer.decode(token_id[0, :])
             is_valid = is_valid_token(token)
             retry_count += 1
@@ -34,4 +39,4 @@ class TokenSampler:
         if not is_valid:
             self.logger.info(f'Invalid character: {token}')
 
-        return token_id
+        return token_id, token_prob
