@@ -61,6 +61,7 @@ class TextGenerator:
         ) for version in self.model_versions}
 
         self.logger.info('Finished initializing TextGenerator')
+        self.logger.info(f'Available versions: {self.model_versions}')
 
     def decode_tokens(self, token_ids):
         return [self.tokenizer.decode(token_id) for token_id in token_ids]
