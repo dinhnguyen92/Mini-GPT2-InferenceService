@@ -28,11 +28,6 @@ app = FastAPI(dependencies=[Depends(validate_api_key)])
 def assert_valid_version(model_version):
     if model_version not in text_generator.models:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"Model version '{model_version}' not found")
-
-# This endpoint is needed for 
-@app.get('/')
-async def health_check():
-    return {'message': 'success'}
     
 @app.get('/health-check')
 async def health_check():
