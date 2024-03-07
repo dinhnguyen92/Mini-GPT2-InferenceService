@@ -32,7 +32,6 @@ class TextGenerator:
         self.logger = logger
 
         self.model_versions = get_available_model_versions(limit=model_limit)
-        self.logger.info(f'All model versions: {self.model_versions}')
 
         self.tokenizer_checkpoint = 'gpt2'
         self.tokenizer = GPT2Tokenizer.from_pretrained(self.tokenizer_checkpoint)
