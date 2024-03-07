@@ -7,7 +7,7 @@ from transformers import GPT2Tokenizer
 
 from models import ModelInfo
 
-from model_store import download_model_config, download_model, download_losses, get_available_model_versions
+from model_store import download_model_config, read_model_from_state_dict, download_losses, get_available_model_versions
 from token_sampler import TokenSampler
 from token_filter import is_valid_token
 
@@ -43,9 +43,9 @@ class TextGenerator:
         self.logger.info('Downloading model configs')
         self.model_configs = {version: download_model_config(version) for version in self.model_versions}
 
-        self.logger.info('Downloading models')
+        self.logger.info('Loading models from state dict')
         vocab_size = self.tokenizer.vocab_size + 1
-        self.models = {version: download_model(
+        self.models = {version: read_model_from_state_dict(
             vocab_size,
             version,
             self.model_configs[version]

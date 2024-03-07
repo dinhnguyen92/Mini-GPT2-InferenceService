@@ -1,9 +1,12 @@
+import os
 import json
 import torch
 import numpy as np
 
 from models import Decoder, ModelConfig
 from azure_blob_service import download_file, list_container_blobs
+
+model_directory = 'model_dict'
 
 models_container_name = 'ml-models'
 model_file_prefix = 'mini-gpt2-'
@@ -41,9 +44,16 @@ def download_losses(model_version, is_train_losses=True):
         return torch.tensor(np.array(json.load(buffer)))
 
 def get_available_model_versions(limit=0):
-    file_names = [blob.name for blob in list_container_blobs(models_container_name)]
+    file_names = os.listdir(model_directory)
     versions = [name.removeprefix(model_file_prefix).removesuffix(f'.{state_dict_file_extension}') for name in file_names]
 
     # Sort the versions in ascending order
     sorted_versions = sorted(versions, key=lambda version: int(version[1:]))
     return sorted_versions if limit <= 0 else sorted_versions[-limit:]
+
+def read_model_from_state_dict(vocab_size, model_version, model_config: ModelConfig):
+    file_path = f'{model_directory}/{model_file_prefix}{model_version}.{state_dict_file_extension}'
+    state_dict = torch.load(file_path, map_location=torch.device('cpu'))
+    model = Decoder(vocab_size, model_config)
+    model.load_state_dict(state_dict)
+    return model
