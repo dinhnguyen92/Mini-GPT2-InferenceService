@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # Copy the rest of the application code into the container
 COPY . .
 
-# Expose the app to gunicorn through port 3100 of the container
+# Expose the app to gunicorn through port 8000 of the container
 EXPOSE 8000
 
 # Start the server to run the application
-CMD ["gunicorn", "main:app"]
+CMD ["gunicorn", "main:app", "-b", "0.0.0.0:8000", "-c", "gunicorn.conf.py"]
