@@ -8,10 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Copy the models' state dictionaries
-COPY /model_dict /model_dict
-
-# Copy the rest of the application code into the container
+# Copy the rest of the application code and state dictionaries into the container
 COPY . .
 
 # Expose the app to gunicorn through port 8000 of the container
