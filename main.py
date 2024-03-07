@@ -144,6 +144,10 @@ def assert_valid_version(model_version):
     if model_version not in text_generator.models:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"Model version '{model_version}' not found")
     
+@app.get('/health-check')
+async def health_check():
+    return {'message': 'success'}
+    
 # Endpoint to get available model versions
 @app.get('/model-versions', response_model=List[str])
 async def list_versions():
