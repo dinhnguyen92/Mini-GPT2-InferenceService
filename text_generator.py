@@ -39,10 +39,8 @@ class TextGenerator:
 
         self.token_sampler = TokenSampler(self.tokenizer, logger)
 
-        self.logger.info('Downloading model configs')
         self.model_configs = {version: download_model_config(version) for version in self.model_versions}
 
-        self.logger.info('Downloading models')
         vocab_size = self.tokenizer.vocab_size + 1
         self.models = {version: download_model(
             vocab_size,
@@ -50,7 +48,6 @@ class TextGenerator:
             self.model_configs[version]
         ) for version in self.model_versions}
 
-        self.logger.info('Downloading model infos')
         self.model_infos = {version: ModelInfo(
             version=version,
             config=self.model_configs[version],
@@ -61,6 +58,7 @@ class TextGenerator:
 
         self.logger.info('Finished initializing TextGenerator')
         self.logger.info(f'Available versions: {self.model_versions}')
+        self.logger.info(f'Model limit: {model_limit}')
 
     def decode_tokens(self, token_ids):
         return [self.tokenizer.decode(token_id) for token_id in token_ids]
